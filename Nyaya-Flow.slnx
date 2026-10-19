@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="../Nyaya-FlowAPI/Nyaya-FlowAPI.csproj" />
+  <Project Path="Nyaya-Flow.csproj" />
+</Solution>

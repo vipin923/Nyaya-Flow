@@ -1,0 +1,130 @@
+﻿@page "/"
+@layout EmptyLayout
+@using System.IO
+@using System.Linq
+@inject ISnackbar Snackbar
+@inject IConfiguration Config
+@inject NavigationManager NavManager
+@inject IJSRuntime JS
+@using Nyaya_Flow.Services 
+@using System.Security.Cryptography
+@using System.Text
+@inject NyayaFlowServices Nyayaservices
+@inject Blazored.LocalStorage.ILocalStorageService LocalStorage
+@inject CustomAuthStateProvider authStateProvider
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center justify-center mud-width-full" Style="height: 100vh;">
+    <MudPaper Elevation="25" Class="pa-8" Style="width: 100%; border-top: 4px solid #d32f2f;">
+        <MudText Typo="Typo.h4" Align="Align.Center" GutterBottom="true"><b>Nyaya-Flow 2026</b></MudText>
+        <MudText Typo="Typo.subtitle2" Align="Align.Center" Color="Color.Error" GutterBottom="true">
+            Restricted BNS Evidence Vault
+        </MudText>
+
+        <MudForm>
+            <MudTextField @bind-Value="_counselEmail" T="string" Label="Counsel ID (Email)" Variant="Variant.Outlined" Margin="Margin.Dense" Class="my-4" />
+            
+            <MudTextField @bind-Value="_counselPin" Label="PIN" InputType="InputType.Password" MaxLength="6" Variant="Variant.Outlined" Class="mb-4" />
+            <MudButton Variant="Variant.Filled" Color="Color.Dark" Size="Size.Large" FullWidth="true" StartIcon="@Icons.Material.Filled.Usb" OnClick="LoginWithEncryptedUsb" Class="mb-4">
+                Sign-In
+            </MudButton>
+        </MudForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private string _counselEmail;
+    private string _counselPin; 
+    // Paste the exact hash you generated via PowerShell here
+
+    private const string KeyFileName = ".nyaya_auth.enc";
+
+
+
+    private async Task LoginWithEncryptedUsb()
+    {
+        // 1. Check AppSettings for allowed emails (Our Gatekeeper)
+        var allowedEmails = Config["UserId:Email"];
+        if (allowedEmails == null || !allowedEmails.Contains(_counselEmail))
+        {
+            Snackbar.Add("Unrecognized Counsel ID.", Severity.Error);
+            return;
+            _counselPin = string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(_counselPin) || _counselPin.Length != 6)
+        {
+            Snackbar.Add("Please enter your 6-digit PIN.", Severity.Warning);
+            return;
+        }
+        
+        string expectedSecret = Config["Authentication:HardwareKeySecret"];
+        
+        // 2. Scan and Decrypt
+        bool isAuthenticated = ScanAndDecryptUsb(expectedSecret, _counselPin);
+
+        if (isAuthenticated)
+        {
+            Snackbar.Add("Encrypted Key Verified. Vault access granted.", Severity.Success);
+            var token = await Nyayaservices.GetToken(_counselEmail);
+            await LocalStorage.SetItemAsync("paseto_token", token);
+
+            authStateProvider.NotifyUserAuthentication(token, "AdminUser");
+            NavManager.NavigateTo("/home");
+        }
+        else
+        {
+            Snackbar.Add("Access Denied: USB not found or incorrect PIN.", Severity.Error);
+            _counselPin = string.Empty;
+        }
+    }
+    private bool ScanAndDecryptUsb(string expectedSecret, string pin)
+    {
+        try
+        {
+            DriveInfo[] allDrives = DriveInfo.GetDrives();
+            var usbDrives = allDrives.Where(d => d.DriveType == DriveType.Removable && d.IsReady);
+
+            foreach (var drive in usbDrives)
+            {
+                string keyFilePath = Path.Combine(drive.RootDirectory.FullName, KeyFileName);
+
+                if (File.Exists(keyFilePath))
+                {
+                    // Read the encrypted Base64 string
+                    string base64Encrypted = File.ReadAllText(keyFilePath).Trim();
+                    byte[] encryptedData = Convert.FromBase64String(base64Encrypted);
+
+                    // Recreate the AES key using the typed PIN
+                    byte[] key = SHA256.HashData(Encoding.UTF8.GetBytes(pin));
+                    byte[] iv = new byte[16];
+
+                    using Aes aes = Aes.Create();
+                    aes.Key = key;
+                    aes.IV = iv;
+
+                    using MemoryStream ms = new MemoryStream(encryptedData);
+                    using CryptoStream cs = new CryptoStream(ms, aes.CreateDecryptor(), CryptoStreamMode.Read);
+                    using StreamReader sr = new StreamReader(cs);
+                    
+                    // Attempt to decrypt
+                    string decryptedSecret = sr.ReadToEnd();
+                    
+                    if (decryptedSecret == expectedSecret)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        catch (CryptographicException)
+        {
+            // If the PIN is wrong, decryption fails and throws this error
+            Console.WriteLine("Decryption failed. Wrong PIN.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+
+        return false;
+    }
+}

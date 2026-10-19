@@ -1,0 +1,117 @@
+﻿@page "/home"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@implements IAsyncDisposable
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+
+<MudText Typo="Typo.h5" GutterBottom="true"><b>Active Statutory Notices (2026 IT Rules)</b></MudText>
+
+<MudDataGrid T="TakedownNotice" Items="@_activeNotices" RowClassFunc="@RowStyleFunc" Elevation="4">
+    <Columns>
+        <PropertyColumn Property="x => x.CaseId" Title="Case ID" />
+        <PropertyColumn Property="x => x.Type" Title="Offense Type" />
+        <PropertyColumn Property="x => x.ReceivedAt" Title="Received (IST)" Format="HH:mm:ss" />
+        <TemplateColumn Title="Statutory Deadline (Time Remaining)">
+            <CellTemplate>
+                <MudText Typo="Typo.button" Color="@GetTimerColor(context.Item)">
+                    @context.Item.TimeRemaining.ToString(@"hh\:mm\:ss")
+                </MudText>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Action">
+            <CellTemplate>
+                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary">Review Evidence</MudButton>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+</MudDataGrid>
+</MudContainer>
+@code {
+    [Inject] private ISnackbar Snackbar { get; set; }
+    
+  //  private HubConnection _hubConnection;
+    private List<TakedownNotice> _activeNotices = new();
+    private System.Threading.Timer _ticker;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 1. Load Initial Dummy Data
+        LoadInitialCases();
+
+        // 2. Start the 1-second C# Ticker for the UI
+        _ticker = new System.Threading.Timer(UpdateTimer, null, 0, 1000);
+
+        // 3. Connect to SignalR for live government alerts
+      /*  _hubConnection = new HubConnectionBuilder()
+            .WithUrl("https://localhost:5001/takedownhub") // Replace with actual backend URL
+            .Build();
+
+        _hubConnection.On<string, string, int>("ReceiveUrgentNotice", (caseId, type, mins) =>
+        {
+            var newNotice = new TakedownNotice
+            {
+                CaseId = caseId,
+                Type = type,
+                ReceivedAt = DateTime.UtcNow,
+                Deadline = DateTime.UtcNow.AddMinutes(mins)
+            }; 
+            
+            _activeNotices.Add(newNotice);
+            Snackbar.Add($"URGENT SGI TAKEDOWN: {caseId}", Severity.Error);
+            InvokeAsync(StateHasChanged);
+        }); */
+
+       // await _hubConnection.StartAsync();
+    }
+
+    // Forces Blazor to re-render the time remaining every second
+    private void UpdateTimer(object state)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Highlighting Logic: Flash red if under 30 minutes
+    private string RowStyleFunc(TakedownNotice notice, int index)
+    {
+        if (notice.TimeRemaining.TotalMinutes < 30 && notice.TimeRemaining.TotalSeconds > 0)
+            return "background-color: rgba(211, 47, 47, 0.2); font-weight: bold;"; // Faint Red
+        
+        if (notice.TimeRemaining.TotalSeconds <= 0)
+            return "background-color: rgba(211, 47, 47, 0.8); color: white;"; // Missed deadline
+            
+        return string.Empty;
+    }
+
+    private Color GetTimerColor(TakedownNotice notice)
+    {
+        return notice.TimeRemaining.TotalMinutes < 30 ? Color.Error : Color.Success;
+    }
+
+    private void LoadInitialCases()
+    {
+        _activeNotices = new List<TakedownNotice>
+        {
+            new TakedownNotice { CaseId = "BNS-402", Type = "NCII Deepfake", ReceivedAt = DateTime.UtcNow.AddMinutes(-10), Deadline = DateTime.UtcNow.AddMinutes(110) }, // 2 hours for NCII
+            new TakedownNotice { CaseId = "BNS-405", Type = "SGI Disinformation", ReceivedAt = DateTime.UtcNow.AddMinutes(-150), Deadline = DateTime.UtcNow.AddMinutes(30) } // 3 hours for standard, approaching deadline!
+        };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _ticker?.Dispose();
+      /*  if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        } */
+    }
+
+    // Internal Model
+    public class TakedownNotice
+    {
+        public string CaseId { get; set; }
+        public string Type { get; set; }
+        public DateTime ReceivedAt { get; set; }
+        public DateTime Deadline { get; set; }
+        public TimeSpan TimeRemaining => Deadline > DateTime.UtcNow ? Deadline - DateTime.UtcNow : TimeSpan.Zero;
+    }
+}

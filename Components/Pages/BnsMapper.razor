@@ -1,0 +1,45 @@
+﻿@page "/bns-mapper"
+@using Nyaya_Flow.Services
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-8">
+    <MudText Typo="Typo.h4" GutterBottom="true"><b>Bharatiya Nyaya Sanhita (BNS) Mapper</b></MudText>
+    <MudText Typo="Typo.body1" Class="mb-6">
+        Cross-reference legacy IPC sections with modern BNS penal codes for digital forgery and synthetic evidence generation.
+    </MudText>
+
+    <MudTable Items="@_charges" Filter="new Func<LegalCharge,bool>(FilterFunc)" Hover="true" Striped="true" Elevation="4">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Forensic-to-Legal Mapping</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_searchString" Placeholder="Search IPC, BNS, or Crime Type..." Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>BNS Section</MudTh>
+            <MudTh>Legacy IPC</MudTh>
+            <MudTh>Crime Type</MudTh>
+            <MudTh>Application to Deepfakes</MudTh>
+            <MudTh>Legal Action</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="BNS Section"><MudChip T="string" Color="Color.Primary" Size="Size.Small">@context.BnsSection</MudChip></MudTd>
+            <MudTd DataLabel="Legacy IPC"><MudChip T="string" Color="Color.Dark" Size="Size.Small">@context.OldIpcSection</MudChip></MudTd>
+            <MudTd DataLabel="Crime Type"><b>@context.CrimeType</b></MudTd>
+            <MudTd DataLabel="Description">@context.Description</MudTd>
+            <MudTd DataLabel="Action"><MudText Color="Color.Error" Typo="Typo.caption">@context.SuggestedAction</MudText></MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private string _searchString = "";
+    private List<LegalCharge> _charges = BnsLegalDictionary.GetCyberCrimeMappings();
+
+    private bool FilterFunc(LegalCharge element)
+    {
+        if (string.IsNullOrWhiteSpace(_searchString)) return true;
+        if (element.BnsSection.Contains(_searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (element.OldIpcSection.Contains(_searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (element.CrimeType.Contains(_searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+    
+}

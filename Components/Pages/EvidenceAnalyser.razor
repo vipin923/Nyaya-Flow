@@ -1,0 +1,189 @@
+﻿@page "/evidence-scanner"
+@using Grpc.Net.Client
+@using Grpc.Net.Client.Web
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+
+@inject ISnackbar Snackbar
+
+@using nyayaflow.Protos;  <!-- Make sure this matches the namespace in your evidence.proto file -->
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+    <MudText Typo="Typo.h4" GutterBottom="true"><b>BNS Evidence Vault</b></MudText>
+    
+   <MudPaper Elevation="4" Class="pa-8 mb-6" Style="border-left: 5px solid #1976d2;">
+    <MudText Typo="Typo.h6">Secure SGI Media Streaming</MudText>
+    <MudText Typo="Typo.body2" Class="mb-4">Upload images or videos. Files are chunked and deepfake classification.</MudText>
+
+    <!-- NEW: Accept parameter now allows images AND videos -->
+    <MudFileUpload T="IBrowserFile" FilesChanged="UploadMassiveVideoAsync" Accept=".mp4,.mkv,.avi,.mov,.jpg,.jpeg,.png">
+        <ButtonTemplate>
+            <MudButton HtmlTag="label"
+                       Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.UploadFile"
+                          
+                       Disabled="@_isUploading">
+                Select SGI Media (Image/Video)
+            </MudButton>
+        </ButtonTemplate>
+    </MudFileUpload>
+</MudPaper>
+
+    <!-- REAL-TIME PROGRESS BAR -->
+    @if (_isUploading)
+    {
+        <MudPaper Elevation="2" Class="pa-4 mb-6">
+            <MudText Align="Align.Center" GutterBottom="true"><b>Encrypting & Streaming Chunks... @_uploadProgress%</b></MudText>
+            <MudProgressLinear Color="Color.Secondary" Value="@_uploadProgress" Size="Size.Large" Class="mb-2" />
+            
+            @if (_uploadProgress == 100)
+            {
+                <MudText Align="Align.Center" Color="Color.Warning" Class="mt-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Memory" Size="Size.Small" Class="mr-1"/>
+                    <i>Running  AI Analysis. Please wait...</i>
+                </MudText>
+            }
+        </MudPaper>
+    }
+
+    <!-- FORENSIC REPORT DASHBOARD -->
+    @if (_finalVerdict != null)
+    {
+        <MudCard Elevation="4" Style="@(_finalVerdict.IsAdmissible ? "border-left: 5px solid #4caf50;" : "border-left: 5px solid #f44336;")">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">
+                        @(_finalVerdict.IsAdmissible ? "Real Pixel" : "AI Generated: Synthetic Content Detected")
+                    </MudText>
+                </CardHeaderContent>
+                <CardHeaderActions>
+                    <MudChip T="string" Color="@(_finalVerdict.IsAdmissible ? Color.Success : Color.Error)">
+                        @_finalVerdict.Message
+                    </MudChip>
+                </CardHeaderActions>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudText Typo="Typo.body1" Class="mb-4">
+                    <b>AI Generation Probability:</b> 
+                    <span style="color: @(_finalVerdict.SyntheticProbability > 75 ? "red" : "green")">
+                        @_finalVerdict.SyntheticProbability%
+                    </span>
+                </MudText>
+
+                @if (_finalVerdict.RedFlags.Any())
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Forensic Action Log:</MudText>
+                    <MudList T="string" Dense="true">
+                        @foreach (var flag in _finalVerdict.RedFlags)
+                        {
+                            <MudListItem Icon="@(_finalVerdict.IsAdmissible ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Warning)" 
+                                         IconColor="@(_finalVerdict.IsAdmissible ? Color.Success : Color.Error)">
+                                @flag
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+            </MudCardContent>
+        </MudCard>
+    }
+</MudContainer>
+
+@code {
+    private bool _isUploading = false;
+    private int _uploadProgress = 0;
+    private UploadStatus _finalVerdict;
+
+    private async Task UploadMassiveVideoAsync(IBrowserFile file)
+    {
+        if (file == null) return;
+
+        _isUploading = true;
+        _uploadProgress = 0;
+        _finalVerdict = null; // Reset UI
+        StateHasChanged();
+
+        try
+        {
+            // 1. Setup the gRPC-Web Channel (Change this URL to your actual API address)
+            var handler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, new HttpClientHandler());
+         //   using var channel = GrpcChannel.ForAddress("https://ssx17pgh-7260.inc1.devtunnels.ms", new GrpcChannelOptions { HttpHandler = handler });
+             using var channel = GrpcChannel.ForAddress("https://985vx5r2-7260.inc1.devtunnels.ms", new GrpcChannelOptions { HttpHandler = handler });
+            var client = new EvidenceVault.EvidenceVaultClient(channel);
+
+            // 2. Open the Bi-Directional Stream
+            using var call = client.StreamEvidence();
+
+            // 3. Prepare to chop the video into 64KB chunks
+            var buffer = new byte[64 * 1024]; 
+            
+            // Allow up to a 5GB file limit for the browser stream
+            long totalBytes = file.Size;
+            long uploadedBytes = 0;
+            using var fileStream = file.OpenReadStream(maxAllowedSize: 5000L * 1024 * 1024);
+            
+            int bytesRead;
+            long chunkIndex = 0;
+
+            // 4. THE CONVEYOR BELT
+            while ((bytesRead = await fileStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+            {
+                var chunkContent = Google.Protobuf.ByteString.CopyFrom(buffer, 0, bytesRead);
+
+                await call.RequestStream.WriteAsync(new EvidenceChunk
+                {
+                    Content = chunkContent,
+                    FileName = file.Name,
+                    ChunkIndex = chunkIndex++
+                });
+
+                // Update Progress UI
+                uploadedBytes += bytesRead;
+                _uploadProgress = (int)((uploadedBytes * 100) / totalBytes);
+                StateHasChanged(); 
+            }
+
+            // 5. Tell the server we are done sending data
+            await call.RequestStream.CompleteAsync();
+
+            // 6. Wait for the ML.NET / FFmpeg Engine to return the Forensic Report
+            _finalVerdict = await call.ResponseAsync;
+            string boxColor = "bg-success"; // Default Green
+            string statusText = "Real Pixel.";
+
+            if (_finalVerdict.IsAdmissible)
+            {
+                boxColor = "bg-danger"; // Red
+                statusText = "INADMISSIBLE DEEPFAKE";
+            }
+            else if (_finalVerdict.SyntheticProbability >= 60.00)
+            {
+                boxColor = "bg-warning"; // Yellow
+                statusText = "SUSPICIOUS - MANUAL REVIEW REQUIRED";
+            }
+        
+            if (_finalVerdict.IsAdmissible)
+            {
+                Snackbar.Add("Evidence officially logged in the War Room.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Warning: File rejected by BNS security protocols.", Severity.Error);
+            }
+        }
+        catch (Grpc.Core.RpcException rpcEx)
+        {
+            Snackbar.Add($"gRPC Protocol Error: {rpcEx.Status.Detail}", Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Upload failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isUploading = false;
+            StateHasChanged();
+        }
+    }
+}

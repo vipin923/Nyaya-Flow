@@ -1,0 +1,24 @@
+﻿syntax = "proto3";
+option csharp_namespace = "nyayaflow.Protos";
+package evidence;
+
+// The Service Definition
+service EvidenceVault {
+  // The client (Blazor) streams chunks UP, the server returns ONE status back
+  rpc StreamEvidence (stream EvidenceChunk) returns (UploadStatus);
+}
+
+// The tiny data packet sent on the conveyor belt
+message EvidenceChunk {
+  bytes content = 1;         // The actual binary file data
+  string file_name = 2;      // The name of the SGI file
+  int64 chunk_index = 3;     // Keeping track of the order
+}
+
+// The final forensic report sent back to the lawyer
+message UploadStatus {
+  bool is_admissible = 1;
+  string message = 2;
+  double synthetic_probability = 3;
+  repeated string red_flags = 4; // Array of AI footprints
+}

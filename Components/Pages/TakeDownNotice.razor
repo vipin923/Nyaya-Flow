@@ -1,0 +1,121 @@
+﻿@page "/takedown-monitor"
+@using System.Timers
+@using Nyaya_Flow.Models
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+
+    <MudText Typo="Typo.h4" GutterBottom="true"><b>Active Takedown Monitor</b></MudText>
+    <MudText Typo="Typo.body1" Class="mb-6">Tracking legally mandated evidence removal and compliance deadlines.</MudText>
+    <MudCard Class="mb-8" Elevation="3">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h6"><b>Log New Legal Notice</b></MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        <MudCardContent>
+            <MudGrid>
+                <!-- Row 1: Case Details -->
+                <MudItem xs="12" md="3">
+                    <MudTextField @bind-Value="_inputCaseId" Label="Case ID (e.g., FIR-992)" Variant="Variant.Outlined" Required="true" />
+                </MudItem>
+                <MudItem xs="12" md="5">
+                    <MudTextField @bind-Value="_inputCaseName" Label="Case Name / Target Subject" Variant="Variant.Outlined" Required="true" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudSelect T="string" @bind-Value="_inputType" Label="Violation Type" Variant="Variant.Outlined" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem Value="@("IT Act Sec 69A")" />
+                        <MudSelectItem Value="@("Deepfake Impersonation")" />
+                        <MudSelectItem Value="@("CSAM Violation")" />
+                        <MudSelectItem Value="@("Court Ordered Removal")" />
+                    </MudSelect>
+                </MudItem>
+
+                <!-- Row 2: Timestamps and Action -->
+                <MudItem xs="12" md="4">
+                    <!-- Format="s" forces the native browser Date/Time picker -->
+                    <MudTextField @bind-Value="_inputReceivedAt" Label="Received At (Local Time)" Format="s" InputType="InputType.DateTimeLocal" Variant="Variant.Outlined" Required="true" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudTextField @bind-Value="_inputDeadline" Label="Legal Deadline (Local Time)" Format="s" InputType="InputType.DateTimeLocal" Variant="Variant.Outlined" Required="true" />
+                </MudItem>
+                <MudItem xs="12" md="4" Class="d-flex align-center">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveManualNotice" FullWidth="true" Size="Size.Large">
+                        Save Notice
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudCardContent>
+    </MudCard>
+    </MudContainer>
+@code {
+    public class TakedownNotice
+    {
+        public string CaseId { get; set; }
+        public string CaseName { get; set; }
+        public string Type { get; set; }
+        public DateTime ReceivedAt { get; set; }
+        public DateTime Deadline { get; set; }
+        public TimeSpan TimeRemaining => Deadline > DateTime.UtcNow ? Deadline - DateTime.UtcNow : TimeSpan.Zero;
+    }
+
+    private List<TakedownNotice> ActiveNotices = new();
+    private Timer _timer;
+
+    // String bindings
+    private string _inputCaseId = "";
+    private string _inputCaseName = "";
+    private string _inputType = "IT Act Sec 69A";
+    
+    // NEW: DateTime bindings for the UI
+    private DateTime _inputReceivedAt;
+    private DateTime _inputDeadline;
+
+    protected override void OnInitialized()
+    {
+        // Automatically default the UI inputs to "Right Now" and "+36 Hours"
+        // to save the investigator time, but allow them to overwrite it.
+        _inputReceivedAt = DateTime.Now;
+        _inputDeadline = DateTime.Now.AddHours(36);
+
+        _timer = new Timer(1000);
+        _timer.Elapsed += (sender, e) => InvokeAsync(StateHasChanged);
+        _timer.Start();
+    }
+
+    private void SaveManualNotice()
+    {
+        if (string.IsNullOrWhiteSpace(_inputCaseId) || string.IsNullOrWhiteSpace(_inputCaseName))
+            return;
+
+        var newNotice = new TakedownNotice
+        {
+            CaseId = _inputCaseId,
+            CaseName = _inputCaseName,
+            Type = _inputType,
+            
+            // CRITICAL: Convert the local time from the UI into Universal Time (UTC)
+            // This ensures the countdown timer math works perfectly, regardless of timezone.
+            ReceivedAt = _inputReceivedAt.ToUniversalTime(),
+            Deadline = _inputDeadline.ToUniversalTime()
+        };
+
+        ActiveNotices.Add(newNotice);
+
+        // Reset fields for the next entry
+        _inputCaseId = "";
+        _inputCaseName = "";
+        _inputType = "IT Act Sec 69A";
+        
+        // Reset the timestamps back to current time
+        _inputReceivedAt = DateTime.Now;
+        _inputDeadline = DateTime.Now.AddHours(36);
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

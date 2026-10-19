@@ -1,0 +1,48 @@
+﻿@inherits LayoutComponentBase
+
+<MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="_nyayaTheme" />
+<MudDialogProvider />
+<MudPopoverProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Color="Color.Dark">
+        <MudIconButton Icon="@Icons.Material.Filled.Gavel" Color="Color.Inherit" Edge="Edge.Start" />
+        <MudText Typo="Typo.h6" Class="ml-3"><b>Nyaya-Flow</b> // Active Takedown Monitor</MudText>
+        <MudSpacer />
+        <MudChip T="string" Color="Color.Error" Variant="Variant.Filled">BNS Compliance Mode: ACTIVE</MudChip>
+    </MudAppBar>
+
+    <MudDrawer Open="true" Elevation="2" ClipMode="DrawerClipMode.Always">
+        <MudNavMenu>
+            <MudNavLink Href="/home" Icon="@Icons.Material.Filled.Dashboard">War Room</MudNavLink>
+            <MudNavLink Href="/evidence-scanner" Icon="@Icons.Material.Filled.Security">Evidence Analyzer</MudNavLink>
+            <MudNavLink Href="/vault-intake" Icon="@Icons.Material.Filled.Add">Store Evidence</MudNavLink>
+            <MudNavLink Href="/vault-records" Icon="@Icons.Material.Filled.Storage">Evidence Storage</MudNavLink>
+            <MudNavLink Href="/takedown-monitor" Icon="@Icons.Material.Filled.Timeline">TakeDown Notice</MudNavLink>
+
+            <MudNavLink Href="/bns-mapper" Icon="@Icons.Material.Filled.MenuBook">BNS Mapper</MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+   
+    <MudMainContent Class="pa-6">
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-4">
+        @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _isDarkMode = true; // Dark mode forced for War Room aesthetic
+    
+    private MudTheme _nyayaTheme = new MudTheme()
+    {
+        PaletteDark = new PaletteDark()
+        {
+            Primary = "#1976d2",
+            Background = "#121212",
+            Surface = "#1e1e1e",
+            Error = "#d32f2f" // Critical for our < 30 min warnings
+        }
+    };
+}

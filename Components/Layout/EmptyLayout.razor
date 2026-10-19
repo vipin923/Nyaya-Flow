@@ -1,0 +1,26 @@
+﻿@inherits LayoutComponentBase
+
+<MudThemeProvider @bind-IsDarkMode="@_isDarkMode" Theme="_nyayaTheme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudMainContent Class="mud-theme-dark">
+        @Body
+    </MudMainContent>
+</MudLayout>
+@code {
+    private bool _isDarkMode = true; // Dark mode forced for War Room aesthetic
+    
+    private MudTheme _nyayaTheme = new MudTheme()
+    {
+        PaletteDark = new PaletteDark()
+        {
+            Primary = "#1976d2",
+            Background = "#121212",
+            Surface = "#1e1e1e",
+            Error = "#d32f2f" // Critical for our < 30 min warnings
+        }
+    };
+}

@@ -1,0 +1,186 @@
+﻿@page "/vault-intake"
+@using MudBlazor
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using Nyaya_Flow.Models
+@using Nyaya_Flow.Services
+@inject NyayaFlowServices nyayaFlowServices
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+    <MudText Typo="Typo.h4" GutterBottom="true"><b>BNS Formal Evidence Intake</b></MudText>
+    <MudText Typo="Typo.body1" Class="mb-6">
+        Submit media to the secure vault. Files are hashed alongside the client identity to establish an immutable Chain of Custody.
+    </MudText>
+
+    <MudPaper Elevation="4" Class="pa-8 mb-6" Style="border-left: 5px solid #2e7d32;">
+        
+        <MudForm @ref="_form" IsValid="@_isValid">
+            <!-- 1. The New Client/Case Name Requirement -->
+            <MudTextField @bind-Value="_clientName" 
+                          Label="Client / Case Identifier" 
+                          Variant="Variant.Outlined" 
+                          Required="true" 
+                          RequiredError="A legal identifier is required to generate the seal."
+                          Class="mb-6" />
+
+            <!-- 2. The Bulletproof File Upload -->
+            <MudFileUpload T="IBrowserFile" id="formal-vault-upload" FilesChanged="HandleFileSelection" Accept=".mp4,.mkv,.avi,.mov,.jpg,.jpeg,.png">
+                <ButtonTemplate>
+                    <MudButton HtmlTag="label"
+                               for="formal-vault-upload"
+                               Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.AttachFile"
+                               Disabled="@_isUploading">
+                        @(_selectedFile == null ? "Select Evidence Media" : "Change Selected File")
+                    </MudButton>
+                </ButtonTemplate>
+            </MudFileUpload>
+
+            @if (_selectedFile != null)
+            {
+                <MudText Typo="Typo.caption" Class="mt-2 d-block text-muted">
+                    Selected: @_selectedFile.Name (@(_selectedFile.Size / 1024 / 1024) MB)
+                </MudText>
+            }
+            <MudNumericField @bind-Value="_manualProbability"
+                             Label="Synthetic Generation Probability (%)"
+                             Variant="Variant.Outlined"
+                             Min="0.0"
+                             Max="100.0"
+                             Required="true"
+                             Class="mb-4" />
+
+            <!-- 3. NEW: Manual Admissibility Override -->
+            <MudSwitch @bind-Value="_isAdmissible"
+                       Label="@(_isAdmissible ? "STATUS: AI Generated" : "STATUS: Real Pixel")"
+                       Color="@(_isAdmissible ? Color.Success : Color.Error)"
+                       Class="mb-6" />
+
+            <MudDivider Class="my-6" />
+
+            <!-- 3. The Execution Button -->
+            <MudButton Variant="Variant.Filled"
+                        Color="Color.Success"
+                        Size="Size.Large"
+                        OnClick="CommitToVaultAsync"
+                       Disabled="@(_selectedFile == null || _isUploading)"
+                        FullWidth="true"
+                        StartIcon="@Icons.Material.Filled.Lock">
+                @if (_isUploading)
+                {
+                    <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                    <MudText Class="ms-2">Encrypting & Storing...</MudText>
+                }
+                else
+                {
+                    <MudText>Seal & Commit to Vault</MudText>
+                }
+            </MudButton>
+                
+         
+        </MudForm>
+    </MudPaper>
+
+    <!-- 4. The Cryptographic Results Card -->
+    @if (_uploadComplete && _report != null)
+    {
+        <MudPaper Elevation="4" Class="pa-6" Style="background-color: #1a1a2e; border: 1px solid #4a4e69;">
+
+            
+
+            
+
+            <div class="d-flex align-center mt-3">
+                <MudIcon Icon="@Icons.Material.Filled.Storage" Color="Color.Success" Size="Size.Small" Class="mr-2" />
+                <MudText Typo="Typo.caption" Color="Color.Success">
+                    Evidence safely committed to BNS SQL Vault under identifier: <b>@_clientName</b>
+                </MudText>
+            </div>
+        </MudPaper>
+    }
+
+</MudContainer>
+
+@code {
+    private MudForm _form;
+    private bool _isValid;
+    private bool _isUploading;
+    private bool _uploadComplete;
+    private double _manualProbability = 0.0;
+    private bool _isAdmissible = true;
+    private string _clientName;
+    private IBrowserFile _selectedFile;
+    private EvidenceStore _report; // Replace with your actual gRPC reply object
+
+    private void HandleFileSelection(IBrowserFile file)
+    {
+        _selectedFile = file;
+        _uploadComplete = false; // Reset UI if they pick a new file
+    }
+
+    private async Task CommitToVaultAsync()
+    {
+       
+        await _form.ValidateAsync();
+        if ( _selectedFile == null) return;
+
+        _isUploading = true;
+        StateHasChanged();
+
+        _isUploading = true;
+       
+
+        try
+        {
+            // ====================================================================
+            // TODO: Call your gRPC Upload Stream here!
+            // Pass BOTH the _selectedFile and the _clientName to your backend.
+            // Example:
+            // _report = await _vaultService.StreamAndSealEvidenceAsync(_selectedFile, _clientName);
+            // ====================================================================
+
+            // Simulating network delay for UI testing
+            long maxFileSize = 1024 * 1024 * 50;
+
+            // 2. Read the file stream directly from the browser into server RAM
+            using var memoryStream = new MemoryStream();
+            await _selectedFile.OpenReadStream(maxFileSize).CopyToAsync(memoryStream);
+            byte[] fileBytes = memoryStream.ToArray();
+            await Task.Delay(2000);
+
+            // Mocking the response you will get back from your SQL/Hasher backend
+            _report = new EvidenceStore
+                {
+                    ClientName = _clientName,
+                    EvidenceFile = fileBytes,
+                    IsAdmissible = _isAdmissible,
+                    SyntheticProbability = _manualProbability
+                };
+            var store = await nyayaFlowServices.StoreVault(_report);
+            if (store < 0)
+            {
+                _uploadComplete = true;
+                _clientName = string.Empty;
+                _isAdmissible = false;
+                _manualProbability = 0.0;
+
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Upload failed: {ex.Message}");
+            // Handle error UI here
+        }
+        finally
+        {
+            _isUploading = false;
+            // Clear the file so they don't double-submit
+            _selectedFile = null; 
+            StateHasChanged();
+        }
+    }
+
+    // Temporary mock class. Replace this with the actual object your gRPC service returns.
+   
+}
